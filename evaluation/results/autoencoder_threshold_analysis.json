@@ -1,0 +1,21 @@
+{
+  "threshold": 0.024940771710633032,
+  "threshold_fit_method": "max-F1 sweep over validation-set reconstruction errors (200-point linspace between observed min/max)",
+  "validation": {
+    "n_segments": 2620,
+    "n_anomalous": 1805,
+    "n_normal": 815,
+    "f1_at_threshold": 0.9356060606060606
+  },
+  "test": {
+    "n_segments": 3114,
+    "n_anomalous": 2296,
+    "n_normal": 818,
+    "accuracy": 0.8924213230571612,
+    "precision": 0.9199143468950749,
+    "recall": 0.9355400696864111,
+    "f1": 0.9276614122219823,
+    "roc_auc": 0.9092351533015856
+  },
+  "note": "Ground truth for this binary anomaly evaluation is derived from the dataset's real class labels (normal=0, any broken-propeller class=1). The autoencoder itself was trained ONLY on normal segments and never saw a faulty segment during training."
+}

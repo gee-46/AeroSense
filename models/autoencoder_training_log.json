@@ -1,0 +1,28 @@
+{
+  "history": [
+    {
+      "epoch": 13,
+      "train_loss": 0.049209571312133764,
+      "val_loss": 0.024690394021250717,
+      "seconds": 47.724085569381714
+    },
+    {
+      "epoch": 14,
+      "train_loss": 0.04863387260974498,
+      "val_loss": 0.025318776121351617,
+      "seconds": 44.79839730262756
+    },
+    {
+      "epoch": 15,
+      "train_loss": 0.04783870420945475,
+      "val_loss": 0.025774181529056805,
+      "seconds": 47.62627339363098
+    }
+  ],
+  "best_epoch": 13,
+  "best_val_loss": 0.024690394021250717,
+  "n_params": 51041,
+  "device": "cpu",
+  "done": true,
+  "stop_reason": "max_epochs"
+}

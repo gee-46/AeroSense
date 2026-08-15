@@ -1,0 +1,12 @@
+{
+  "log_mel_mean": -28.556650161743164,
+  "log_mel_std": 11.602086067199707,
+  "computed_from": "train split only, sample of up to 400 segments",
+  "audio_config": {
+    "sample_rate": 16000,
+    "n_mels": 64,
+    "n_fft": 1024,
+    "hop_length": 256,
+    "segment_duration": 2.0
+  }
+}

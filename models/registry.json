@@ -1,0 +1,46 @@
+{
+  "generated_at": "2026-08-13T21:01:15.391207Z",
+  "classifier": {
+    "name": "aerosense_cnn_v1",
+    "path": "models/aerosense_cnn_v1.pt",
+    "architecture": "AeroSenseCNN (4 conv blocks + GAP + FC head)",
+    "class_names": [
+      "normal",
+      "1_broken",
+      "2_broken",
+      "3_4_broken"
+    ],
+    "dataset": "tiiuae/UAV-Propeller-Anomaly-Audio-Dataset (ICASSP 2022)",
+    "trained_epoch": 2,
+    "val_macro_f1": 0.9471446843813198,
+    "val_accuracy": 0.95,
+    "test_accuracy": 0.960179833012203,
+    "test_macro_f1": 0.9610422330424975,
+    "test_avg_latency_ms_per_segment": 2.6142805206532382,
+    "n_params": 106148,
+    "is_trained": true
+  },
+  "autoencoder": {
+    "name": "aerosense_autoencoder_v1",
+    "path": "models/aerosense_autoencoder_v1.pt",
+    "architecture": "ConvAutoencoder (3-layer conv encoder/decoder, latent_dim=32)",
+    "trained_on": "normal-class segments only (train split)",
+    "trained_epoch": 13,
+    "val_loss": 0.024690394021250717,
+    "anomaly_threshold": 0.024940771710633032,
+    "anomaly_threshold_fit_method": "max-F1 sweep over validation-set reconstruction errors (200-point linspace between observed min/max)",
+    "test_precision": 0.9199143468950749,
+    "test_recall": 0.9355400696864111,
+    "test_f1": 0.9276614122219823,
+    "test_roc_auc": 0.9092351533015856,
+    "n_params": 51041,
+    "is_trained": true
+  },
+  "feature_stats_path": "models/feature_stats.json",
+  "manifest_path": "data/processed/manifest.csv",
+  "limitations": [
+    "Classes are propeller-damage-severity classes from a single real dataset (normal / 1_broken / 2_broken / 3_4_broken), not a general bearing/motor/aircraft-engine fault taxonomy \u2014 no reachable dataset covered those.",
+    "Only a CNN was trained to convergence; CRNN/Transformer architectures were not trained due to single-CPU-core compute constraints in this environment (see training/ for untrained-but-implemented alternatives if applicable).",
+    "Segments are 2-second, 50%-overlap windows from 293 real indoor flight recordings; the model has not been validated on outdoor or fixed-wing audio."
+  ]
+}

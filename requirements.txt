@@ -1,0 +1,21 @@
+# --- Core numerical / audio ---
+numpy==2.4.4
+scipy==1.17.1
+librosa==1.0.0
+soundfile==0.14.0
+scikit-learn==1.8.0
+matplotlib==3.10.8
+
+# --- Deep learning ---
+torch==2.13.0
+
+# --- Backend ---
+fastapi==0.141.1
+uvicorn[standard]==0.52.3
+python-multipart==0.0.32
+pydantic==2.13.4
+SQLAlchemy==2.0.52
+
+# --- Testing ---
+pytest==9.1.1
+httpx==0.28.1

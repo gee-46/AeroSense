@@ -1,0 +1,26 @@
+.git
+.gitignore
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# Raw/processed dataset: multi-hundred-MB, only needed for training, not
+# for serving the API. Mount as a volume if you need to retrain in-container.
+data/raw/
+data/processed/
+
+# Large training artifacts not needed at inference time
+models/*_last.pt
+models/*trainer_state.json
+models/*train_stdout.log
+
+notebooks/
+tests/
+evaluation/results/
+backend/uploads/
+backend/outputs/
+*.db
+.env
+.venv/
+venv/

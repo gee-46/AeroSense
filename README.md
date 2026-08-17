@@ -1,419 +1,1186 @@
-# AeroSense — Deep Learning-Based Acoustic Anomaly Detection for UAV Propulsion Systems
 
-AeroSense analyzes UAV acoustic recordings and detects propeller mechanical
-damage using two real, trained PyTorch models: a CNN classifier and a
-convolutional autoencoder. Every number in this document was produced by
-actually running training and evaluation in this repository — none of it is
-estimated, assumed, or fabricated. Where something could not be built for
-real (compute, data availability), that is stated explicitly under
-[Limitations](#limitations) rather than faked.
+<div align="center">
 
-## Table of contents
-- [Problem statement & research question](#problem-statement--research-question)
-- [Dataset](#dataset)
-- [Preprocessing & feature extraction](#preprocessing--feature-extraction)
-- [Data augmentation](#data-augmentation)
-- [Model architectures](#model-architectures)
-- [Training methodology](#training-methodology)
-- [Results](#results)
-- [Unknown anomaly detection](#unknown-anomaly-detection)
-- [Explainability](#explainability)
-- [Architecture](#architecture)
-- [Setup & installation](#setup--installation)
-- [Reproducing training from scratch](#reproducing-training-from-scratch)
-- [Running the API](#running-the-api)
-- [API reference](#api-reference)
-- [Testing](#testing)
-- [Docker](#docker)
-- [Limitations](#limitations)
-- [Future work](#future-work)
+# AeroSense
 
-## Problem statement & research question
+### Deep Learning-Based Acoustic Anomaly Detection for UAV Propulsion Systems
 
-**Research question:** Can a deep learning model detect propeller mechanical
-damage in a UAV from its acoustic signature alone, and can it flag
-acoustically abnormal signals it wasn't trained to recognize as a *specific*
-fault rather than forcing a wrong label onto them?
+**From acoustic recordings to explainable UAV propeller fault detection.**
 
-**Hypothesis:** Propeller damage changes the acoustic spectrum in a
-structured, learnable way (harmonic/broadband energy shifts caused by
-imbalance), so a CNN over mel-spectrograms should discriminate damage
-severity, and an autoencoder trained only on normal acoustic signatures
-should reconstruct damaged-propeller audio poorly enough to flag it as
-anomalous.
+<br />
 
-## Dataset
+[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-Deep%20Learning-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/React-Frontend-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-Frontend-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Tests](https://img.shields.io/badge/Tests-38%20passing-2ea44f?style=for-the-badge)]()
 
-**Source:** [`tiiuae/UAV-Propeller-Anomaly-Audio-Dataset`](https://github.com/tiiuae/UAV-Propeller-Anomaly-Audio-Dataset)
-(Technology Innovation Institute, ICASSP 2022), downloaded via `git clone` —
-this was the one real, license-appropriate acoustic-fault dataset reachable
-from this project's network sandbox (Kaggle/Zenodo/IEEE Dataport datasets
-for bearing/motor faults were not reachable; see [Limitations](#limitations)).
+</div>
 
-| | |
-|---|---|
-| Classes | `normal`, `1_broken`, `2_broken`, `3_4_broken` (number of broken propeller blades/units) |
-| Recordings | 293 real indoor-flight WAV files |
-| Per-class recordings | normal=78, 1_broken=72, 2_broken=71, 3_4_broken=72 |
-| Sample rate | 16 kHz, mono, 16-bit PCM |
-| Recording length | ~39–90 s per flight mission |
-| Total audio | ~5.7 hours |
-| License | See upstream repository |
+---
 
-**Limitation acknowledged:** this dataset covers propeller-damage severity
-only. It does **not** cover bearing faults, motor faults, or fixed-wing
-aircraft engine faults from the original spec's generic taxonomy — no
-dataset for those was reachable in this environment. The backend's real
-class taxonomy is therefore `normal / 1_broken / 2_broken / 3_4_broken`,
-not a fabricated generic fault list.
+## Overview
 
-## Preprocessing & feature extraction
+**AeroSense** is a full-stack deep learning system for detecting UAV
+propeller mechanical damage from acoustic recordings.
 
-Implemented once in `common/audio_features.py` and `common/config.py`, and
-imported identically by both `training/` and `backend/app/services/preprocessing_service.py`
-— there is exactly one preprocessing implementation, so there is no
-train/inference skew.
+The system combines two complementary trained PyTorch models:
 
+- **CNN classifier** — identifies known propeller-damage classes.
+- **Convolutional autoencoder** — detects acoustic anomalies through
+  reconstruction error.
+- **Decision engine** — combines model outputs into
+  `NORMAL`, `ANOMALY`, or `UNKNOWN_ANOMALY`.
+- **Grad-CAM** — provides frequency/time attribution from the classifier's
+  actual gradients.
+- **FastAPI backend** — exposes the complete inference and analytics pipeline.
+- **React + TypeScript frontend** — provides analysis, diagnostics, history,
+  analytics, and model monitoring.
+
+> **All inference results are produced by real trained models.**
+> The application does not use simulated predictions or placeholder model
+> outputs.
+
+---
+
+## Results at a Glance
+
+| Component | Result |
+|---|---:|
+| CNN Test Accuracy | **96.0%** |
+| CNN Macro F1 | **0.961** |
+| Autoencoder Test F1 | **0.928** |
+| Autoencoder ROC-AUC | **0.909** |
+| CNN Parameters | **106,148** |
+| Autoencoder Parameters | **51,041** |
+| Held-out Test Segments | **3,114** |
+| Automated Tests | **38 passing** |
+
+---
+
+## Why AeroSense?
+
+A conventional classifier can force an abnormal acoustic signal into one of
+its known classes even when the signal does not confidently match anything
+seen during training.
+
+AeroSense uses two complementary models:
+
+```text
+                         Acoustic Recording
+                                │
+                                ▼
+                         Audio Preprocessing
+                                │
+                                ▼
+                       Log-Mel Spectrogram
+                                │
+                    ┌───────────┴───────────┐
+                    ▼                       ▼
+              CNN Classifier          Autoencoder
+                    │                       │
+             Fault + Confidence       Reconstruction
+                                         Error
+                    │                       │
+                    └───────────┬───────────┘
+                                ▼
+                         Decision Engine
+                                │
+                 ┌──────────────┼──────────────┐
+                 ▼              ▼              ▼
+              NORMAL         ANOMALY        UNKNOWN
+                                             ANOMALY
+                                │
+                                ▼
+                             Grad-CAM
+                                │
+                                ▼
+                         Diagnostic Report
+````
+
+This allows the system to distinguish between a **known fault** and an
+**acoustically abnormal signal that does not confidently match a known
+fault class**.
+
+---
+
+# Application
+
+The trained models are exposed through a FastAPI backend and consumed by a
+React + TypeScript frontend.
+
+## Dashboard
+
+The dashboard provides:
+
+* Live model status
+* Detection statistics
+* Anomaly trends
+* Fault distribution
+* Recent predictions
+
+## Acoustic Analysis
+
+The analysis workflow provides:
+
+* Drag-and-drop WAV upload
+* Audio metadata
+* Real waveform visualization
+* Context fields
+* Live inference state
+* CNN classification
+* Classification confidence
+* Autoencoder anomaly score
+* Severity assessment
+* Grad-CAM explanation
+
+## Prediction History
+
+* Searchable prediction history
+* Status filtering
+* Device filtering
+* Pagination
+* Prediction details
+
+## Diagnostic Report
+
+Each prediction can be inspected through an engineering-style report containing:
+
+* Signal information
+* Predicted fault
+* Confidence
+* Anomaly score
+* Severity
+* Model attribution
+* Frequency range
+* Time range
+* Device/environment metadata
+
+## Analytics
+
+The analytics dashboard exposes real backend aggregate data including:
+
+* Total predictions
+* Normal/anomalous distribution
+* Fault distribution
+* Anomaly trends
+
+## Model Monitoring
+
+The Models page displays metadata for the models that are actually trained
+and active.
+
+Untrained CRNN/Transformer architectures are **not** presented as deployed
+models.
+
+---
+
+# System Architecture
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│                    React + TypeScript                        │
+│                                                              │
+│  Dashboard │ Analyze │ History │ Analytics │ Models │ Detail │
+└──────────────────────────────┬───────────────────────────────┘
+                               │
+                         REST / JSON
+                               │
+                               ▼
+┌──────────────────────────────────────────────────────────────┐
+│                         FastAPI                              │
+│                                                              │
+│  Validation │ Preprocessing │ Inference │ Analytics │ DB    │
+└──────────────────────┬───────────────────────┬───────────────┘
+                       │                       │
+                       ▼                       ▼
+              ┌────────────────┐      ┌──────────────────┐
+              │  CNN Classifier │      │   Autoencoder   │
+              │                │      │                  │
+              │ Known faults   │      │ Anomaly score    │
+              └───────┬────────┘      └────────┬─────────┘
+                      │                        │
+                      └───────────┬────────────┘
+                                  ▼
+                         ┌────────────────┐
+                         │ Decision Engine│
+                         └───────┬────────┘
+                                 │
+                       ┌─────────┼─────────┐
+                       ▼         ▼         ▼
+                    NORMAL   ANOMALY   UNKNOWN
+                                         ANOMALY
+                                 │
+                                 ▼
+                         ┌──────────────┐
+                         │   Grad-CAM   │
+                         └──────┬───────┘
+                                │
+                                ▼
+                         ┌──────────────┐
+                         │   SQLite DB  │
+                         └──────────────┘
 ```
-wav file
-  → load (librosa, resample to 16kHz, mono)
-  → segment into 2.0s windows (1.0s hop = 50% overlap) — segment_waveform()
-  → peak-normalize waveform to [-1, 1]
-  → log-mel spectrogram (n_mels=64, n_fft=1024, hop=256, fmin=20, fmax=8000)
-  → standardize with TRAIN-SPLIT mean/std (models/feature_stats.json)
-  → (1, 64, 126) tensor
+
+---
+
+# Machine Learning Pipeline
+
+```text
+Raw WAV
+   │
+   ▼
+16 kHz Mono
+   │
+   ▼
+2.0s Windows / 1.0s Hop
+   │
+   ▼
+Peak Normalization
+   │
+   ▼
+64-band Log-Mel Spectrogram
+   │
+   ▼
+Train-Split Standardization
+   │
+   ▼
+(1, 64, 126) Tensor
+   │
+   ├──────────────────────┐
+   ▼                      ▼
+CNN Classifier       Autoencoder
+   │                      │
+   ▼                      ▼
+Fault Class          Reconstruction
+Confidence              Error
+   │                      │
+   └───────────┬──────────┘
+               ▼
+        Decision Engine
+               │
+               ▼
+       Grad-CAM + Report
 ```
 
-**Dataset preparation (`training/prepare_dataset.py`)** builds a segment-level
-manifest (`data/processed/manifest.csv`, 18,569 segments) and splits at the
-**recording** level (not the segment level) — every segment from one flight
-recording lands in exactly one of train/val/test, which is what prevents
-data leakage from overlapping/adjacent segments of the same file:
+Preprocessing is implemented once in:
 
-| Split | Segments |
-|---|---|
-| train | 12,835 |
-| val | 2,620 |
-| test | 3,114 |
-
-Standardization statistics (`log_mel_mean`, `log_mel_std`) are computed from
-a sample of the **train split only**, and reused verbatim at inference time.
-
-## Data augmentation
-
-Applied only to the train split (`training/dataset.py`):
-- Additive Gaussian noise (random level 0.001–0.01)
-- Random amplitude gain (0.7×–1.3×)
-- Random circular time shift (±10%)
-- SpecAugment-style frequency masking and time masking on the mel spectrogram
-
-## Model architectures
-
-### CNN classifier (`backend/app/ml/models/cnn.py`)
-4 conv blocks (Conv2d→BatchNorm→ReLU→MaxPool, channels 16→32→64→128) →
-global average pool → FC(128→64)→FC(64→4). **106,148 parameters.**
-Deliberately compact: this environment trains on a single CPU core, and a
-much larger network would be slow to train and prone to overfitting on
-~13k training segments from 293 source recordings.
-
-### Convolutional autoencoder (`backend/app/ml/models/autoencoder.py`)
-3-layer strided-conv encoder → 32-d latent bottleneck → 3-layer transposed-conv
-decoder. **51,041 parameters.** Trained **only** on `normal`-labeled segments
-— it never sees a faulty segment during training. At inference, reconstruction
-error (MSE) is the anomaly score.
-
-### CRNN / Transformer — not trained (see [Limitations](#limitations))
-The spec asked for CRNN and Transformer architectures compared against the
-CNN. This environment has **1 CPU core, no GPU**, and training the CNN to
-convergence already took ~15 minutes of wall-clock compute split across
-several resumable training runs (see "Resumable training" below). Training
-two more architectures to a fair, real comparison was not feasible in this
-session. Rather than report invented CRNN/Transformer numbers, this project
-ships only the CNN + autoencoder, both trained to convergence and evaluated
-on real held-out data. Implementing CRNN/Transformer architectures and
-training them (given more compute/time) is listed under [Future work](#future-work).
-
-## Training methodology
-
-Both trainers (`training/train_cnn.py`, `training/train_autoencoder.py`) use:
-- Adam optimizer, `ReduceLROnPlateau` LR scheduling
-- Early stopping (patience 3–4 epochs, monitored on validation macro-F1 / validation loss)
-- Class-balanced cross-entropy loss for the classifier (`sklearn.utils.class_weight.compute_class_weight`)
-- Best-checkpoint saving keyed on validation metric, not final epoch
-- Fixed random seed (42) for reproducibility
-
-**Resumable training:** this sandbox does not keep background/`nohup`
-processes alive between tool invocations, and single tool calls have a wall-clock
-limit well under one full epoch (~3.5–4 min/epoch for the CNN on this
-hardware). Both trainers therefore checkpoint model weights + optimizer
-state + epoch counters after every epoch and support `--resume`, so training
-was actually run as several sequential `python -m training.train_cnn --resume
---time-budget-seconds N` invocations. This is documented here because it's an
-unusual pattern, not because it changes the result — the final checkpoint is
-a normal, fully-trained PyTorch model.
-
-```bash
-python -m training.train_cnn --epochs 12 --batch-size 32 --patience 3 --resume --time-budget-seconds 260
-# re-run the same command to continue from the last checkpoint until it reports "done": true
+```text
+common/audio_features.py
+common/config.py
 ```
 
-## Results
+The same implementation is used by training and inference to prevent
+train/inference preprocessing skew.
 
-All numbers below are from `evaluation/evaluate.py` run against the **held-out
-test split** (3,114 segments from recordings never seen during training or
-threshold-fitting). Raw output: `evaluation/results/*.json`, confusion
-matrix and ROC curve images in the same directory.
+---
 
-### CNN classifier — test set
+# Dataset
 
-| Metric | Value |
-|---|---|
-| Accuracy | **96.0%** |
-| Macro F1 | **0.961** |
-| Best epoch (of 12, early-stopped at 5) | 2 |
-| Validation macro F1 at best epoch | 0.947 |
-| Avg inference latency | 2.6 ms/segment (CPU) |
-| Parameters | 106,148 |
+**Source:**
+[TII UAV Propeller Anomaly Audio Dataset](https://github.com/tiiuae/UAV-Propeller-Anomaly-Audio-Dataset)
 
-Confusion matrix (`evaluation/results/cnn_confusion_matrix.png`):
+Technology Innovation Institute, ICASSP 2022.
 
+| Property                | Value                                          |
+| ----------------------- | ---------------------------------------------- |
+| Classes                 | `normal`, `1_broken`, `2_broken`, `3_4_broken` |
+| Recordings              | 293                                            |
+| Normal recordings       | 78                                             |
+| `1_broken` recordings   | 72                                             |
+| `2_broken` recordings   | 71                                             |
+| `3_4_broken` recordings | 72                                             |
+| Sample rate             | 16 kHz                                         |
+| Channels                | Mono                                           |
+| Format                  | 16-bit PCM WAV                                 |
+| Total audio             | ~5.7 hours                                     |
+| Generated segments      | 18,569                                         |
+
+The dataset represents **propeller damage severity**.
+
+It does not contain bearing faults, motor faults, or fixed-wing aircraft
+engine faults.
+
+---
+
+# Leakage-Safe Dataset Split
+
+AeroSense performs the split at the **recording level**, rather than
+randomly splitting individual segments.
+
+This prevents overlapping or adjacent segments from the same flight
+recording from appearing in multiple splits.
+
+| Split      |   Segments |
+| ---------- | ---------: |
+| Train      |     12,835 |
+| Validation |      2,620 |
+| Test       |      3,114 |
+| **Total**  | **18,569** |
+
+Standardization statistics are calculated using the training split only and
+reused during inference.
+
+Stored in:
+
+```text
+models/feature_stats.json
 ```
+
+---
+
+# Preprocessing
+
+Each recording follows the same preprocessing pipeline:
+
+```text
+WAV
+ │
+ ├── Resample → 16 kHz
+ ├── Convert → Mono
+ ├── Segment → 2.0 s windows / 1.0 s hop
+ ├── Peak normalize
+ ├── Log-Mel Spectrogram
+ │      ├── n_mels = 64
+ │      ├── n_fft  = 1024
+ │      ├── hop    = 256
+ │      ├── fmin   = 20 Hz
+ │      └── fmax   = 8000 Hz
+ │
+ └── Train-split standardization
+             │
+             ▼
+        (1, 64, 126)
+```
+
+---
+
+# Data Augmentation
+
+Applied only to training data:
+
+* Gaussian noise
+* Random amplitude gain
+* Circular time shifting
+* Frequency masking
+* Time masking
+
+This prevents augmented samples from contaminating validation or test
+evaluation.
+
+---
+
+# Model Architectures
+
+## CNN Classifier
+
+```text
+Conv2D
+   ↓
+BatchNorm
+   ↓
+ReLU
+   ↓
+MaxPool
+   ↓
+Conv2D
+   ↓
+BatchNorm
+   ↓
+ReLU
+   ↓
+MaxPool
+   ↓
+Conv2D
+   ↓
+BatchNorm
+   ↓
+ReLU
+   ↓
+MaxPool
+   ↓
+Conv2D
+   ↓
+BatchNorm
+   ↓
+ReLU
+   ↓
+MaxPool
+   ↓
+Global Average Pool
+   ↓
+FC 128 → 64
+   ↓
+FC 64 → 4
+```
+
+**Parameters:** 106,148
+
+Classes:
+
+```text
+normal
+1_broken
+2_broken
+3_4_broken
+```
+
+The model is intentionally compact for the available CPU-only training
+environment and the relatively small number of source recordings.
+
+---
+
+## Convolutional Autoencoder
+
+```text
+Input Spectrogram
+       │
+       ▼
+Strided Conv Encoder
+       │
+       ▼
+32-D Latent Space
+       │
+       ▼
+Transposed Conv Decoder
+       │
+       ▼
+Reconstructed Spectrogram
+```
+
+**Parameters:** 51,041
+
+The autoencoder is trained **only on normal acoustic samples**.
+
+At inference:
+
+```text
+Anomaly Score = Reconstruction MSE
+```
+
+A high reconstruction error indicates that the acoustic pattern differs
+from the normal training distribution.
+
+---
+
+# Training Methodology
+
+Both training pipelines use:
+
+* Adam optimizer
+* `ReduceLROnPlateau`
+* Early stopping
+* Best-checkpoint selection
+* Fixed random seed (`42`)
+* Class-balanced cross-entropy for the CNN
+* Checkpointed/resumable training
+
+Training scripts:
+
+```text
+training/
+├── dataset.py
+├── prepare_dataset.py
+├── train_cnn.py
+└── train_autoencoder.py
+```
+
+Training metadata is stored in:
+
+```text
+models/
+├── cnn_training_log.json
+├── cnn_trainer_state.json
+├── autoencoder_training_log.json
+└── autoencoder_trainer_state.json
+```
+
+---
+
+# Results
+
+All reported metrics are from the **held-out test split**.
+
+## CNN Classifier
+
+| Metric                |              Result |
+| --------------------- | ------------------: |
+| Accuracy              |           **96.0%** |
+| Macro F1              |           **0.961** |
+| Validation Macro F1   |           **0.947** |
+| Parameters            |         **106,148** |
+| Average CPU inference | **~2.6 ms/segment** |
+
+### Confusion Matrix
+
+```text
                  predicted
               normal 1_brk 2_brk 3_4_brk
-true normal    808     0     1      9
-     1_broken    0   658    14      5
-     2_broken    3     7   762     31
-     3_4_broken  0     1    53    762
+
+true normal     808     0     1      9
+     1_broken     0   658    14      5
+     2_broken     3     7   762     31
+     3_4_broken   0     1    53    762
 ```
 
-The only meaningful confusion is between `2_broken` and `3_4_broken` — the
-two most acoustically similar (and adjacent-severity) classes, which is the
-physically sensible failure mode for this kind of model, not a random error
-pattern.
+The primary confusion occurs between `2_broken` and `3_4_broken`, the two
+adjacent damage-severity classes.
 
-### Autoencoder anomaly detector — test set
+Evaluation artifact:
 
-The anomaly threshold was **fit, not guessed**: `evaluation/evaluate.py`
-sweeps 200 threshold candidates over the *validation*-set reconstruction
-error distribution and picks the one maximizing binary F1 (normal vs. any
-fault), then evaluates that fixed threshold on the held-out test set.
-
-| Metric | Value |
-|---|---|
-| Fitted threshold | 0.02494 |
-| Test precision | 0.920 |
-| Test recall | 0.936 |
-| Test F1 | 0.928 |
-| Test ROC-AUC | 0.909 |
-
-ROC curve: `evaluation/results/autoencoder_roc.png`.
-
-## Unknown anomaly detection
-
-`backend/app/services/anomaly_service.py` implements the decision engine
-combining both models' real outputs (not a third model — deterministic logic
-over two trained models' predictions, documented in-module):
-
-- **NORMAL**: reconstruction error below threshold AND classifier doesn't
-  confidently predict a known fault.
-- **ANOMALY**: reconstruction error at/above threshold AND classifier
-  confidently (≥ `MIN_CLASSIFIER_CONFIDENCE`, default 0.5) predicts a known
-  fault class → `fault_type` is set.
-- **UNKNOWN_ANOMALY**: reconstruction error at/above threshold but the
-  classifier is *not* confident about which known fault it is →
-  `fault_type` stays `null`. The system does not force an unfamiliar signal
-  into a known class.
-- A documented tie-breaker: if the reconstruction error is only marginally
-  (<10%) over threshold and the classifier is very confident (≥0.9) it's
-  `normal`, the result is treated as NORMAL — this reduces noise from
-  threshold-boundary cases without suppressing genuine anomalies (a >10%
-  exceedance always flows through to the anomaly branches, even if the
-  classifier disagrees — see `tests/test_decision_engine.py`).
-
-Severity (`LOW/MEDIUM/HIGH/CRITICAL`) is a documented mapping from fault
-class + how far the anomaly score exceeds threshold (see docstring in
-`anomaly_service.py`) — again, deterministic logic over real model outputs.
-
-## Explainability
-
-`backend/app/services/explainability_service.py` implements real Grad-CAM
-over the CNN's last convolutional layer: forward + backward pass w.r.t. the
-predicted class, gradient-weighted activation map, upsampled to the input's
-(mel, time) resolution. The API returns:
-- `important_frequency_range_hz` / `important_time_range_seconds` — derived
-  from the region of the heatmap with normalized attribution ≥ 0.6
-- `heatmap_path` — a saved PNG overlay of the heatmap on the mel spectrogram
-
-This is computed from the trained model's actual gradients on the actual
-clip analyzed — not a templated or hardcoded explanation.
-
-## Architecture
-
+```text
+evaluation/results/cnn_confusion_matrix.png
 ```
+
+---
+
+## Autoencoder Anomaly Detector
+
+The anomaly threshold is **fitted using the validation set** and then
+evaluated once on the held-out test set.
+
+| Metric    |      Result |
+| --------- | ----------: |
+| Threshold | **0.02494** |
+| Precision |   **0.920** |
+| Recall    |   **0.936** |
+| F1        |   **0.928** |
+| ROC-AUC   |   **0.909** |
+
+Evaluation artifact:
+
+```text
+evaluation/results/autoencoder_roc.png
+```
+
+---
+
+# Unknown Anomaly Detection
+
+The decision engine combines the outputs of both trained models.
+
+### NORMAL
+
+Reconstruction error is below the fitted anomaly threshold and the
+classifier does not confidently identify a known fault.
+
+### ANOMALY
+
+Reconstruction error exceeds the threshold and the classifier confidently
+identifies a known fault.
+
+### UNKNOWN_ANOMALY
+
+Reconstruction error exceeds the threshold, but the classifier is not
+confident enough to assign a known fault class.
+
+```text
+Known fault
+     │
+     └── Classifier confident
+              │
+              ▼
+           ANOMALY
+
+
+Acoustically abnormal
+     │
+     └── Classifier uncertain
+              │
+              ▼
+       UNKNOWN_ANOMALY
+```
+
+The system therefore avoids forcing every abnormal signal into one of the
+known training classes.
+
+---
+
+# Explainability
+
+AeroSense implements **real Grad-CAM** over the CNN's final convolutional
+layer.
+
+For each analyzed recording, the backend can return:
+
+* Grad-CAM heatmap
+* Mel-spectrogram overlay
+* Important frequency range
+* Important time range
+
+The attribution is computed from the trained model's actual gradients on
+the actual input recording.
+
+It is not hardcoded or templated.
+
+Implementation:
+
+```text
+backend/app/services/explainability_service.py
+```
+
+---
+
+# Backend
+
+The backend is built using:
+
+* FastAPI
+* Pydantic
+* SQLAlchemy
+* SQLite
+* Uvicorn
+* PyTorch
+
+### Core responsibilities
+
+```text
+Audio Validation
+      ↓
+Preprocessing
+      ↓
+Model Loading
+      ↓
+CNN + Autoencoder Inference
+      ↓
+Decision Engine
+      ↓
+Grad-CAM
+      ↓
+Persistence
+      ↓
+Analytics
+```
+
+Models are loaded through a shared model loader and reused across requests.
+
+---
+
+# API
+
+Base URL:
+
+```text
+http://localhost:8000/api/v1
+```
+
+| Method   | Endpoint                        | Description            |
+| -------- | ------------------------------- | ---------------------- |
+| `GET`    | `/health`                       | API health             |
+| `GET`    | `/health/model`                 | Model availability     |
+| `POST`   | `/audio/upload`                 | Validate/probe audio   |
+| `POST`   | `/audio/analyze`                | Run complete inference |
+| `GET`    | `/predictions`                  | List predictions       |
+| `GET`    | `/predictions/{id}`             | Retrieve prediction    |
+| `DELETE` | `/predictions/{id}`             | Delete prediction      |
+| `GET`    | `/models`                       | Model metadata         |
+| `GET`    | `/models/active`                | Active model versions  |
+| `GET`    | `/analytics/summary`            | Aggregate statistics   |
+| `GET`    | `/analytics/fault-distribution` | Fault distribution     |
+| `GET`    | `/analytics/anomaly-trend`      | Anomaly trends         |
+
+Swagger:
+
+```text
+http://localhost:8000/docs
+```
+
+ReDoc:
+
+```text
+http://localhost:8000/redoc
+```
+
+---
+
+# Frontend
+
+The frontend is built with:
+
+* React
+* TypeScript
+* Vite
+* Recharts
+* Web Audio API
+
+### Frontend structure
+
+```text
+frontend/src/
+├── api/
+│   ├── client.ts
+│   ├── endpoints.ts
+│   └── types.ts
+│
+├── components/
+│   ├── analyze/
+│   ├── background/
+│   ├── charts/
+│   ├── gradcam/
+│   ├── layout/
+│   ├── ui/
+│   └── waveform/
+│
+├── hooks/
+├── pages/
+│   ├── DashboardPage.tsx
+│   ├── AnalyzePage.tsx
+│   ├── HistoryPage.tsx
+│   ├── PredictionDetailPage.tsx
+│   ├── AnalyticsPage.tsx
+│   └── ModelsPage.tsx
+│
+├── styles/
+└── utils/
+```
+
+The frontend communicates with the real `/api/v1/*` backend routes and does
+not contain simulated inference data.
+
+---
+
+# Project Structure
+
+```text
 AeroSense/
-├── backend/app/
-│   ├── main.py                      FastAPI app, CORS, exception handlers, startup model loading
-│   ├── api/routes/                  health.py, audio.py, predictions.py, models.py, analytics.py
-│   ├── core/                        config.py, logging.py, exceptions.py
-│   ├── schemas/                     Pydantic request/response models
-│   ├── services/                    audio_service, preprocessing_service, inference_service,
-│   │                                 anomaly_service (decision engine), explainability_service,
-│   │                                 analytics_service
-│   ├── ml/                          model_loader.py (singleton), inference.py, models/cnn.py,
-│   │                                 models/autoencoder.py
-│   ├── db/                          database.py, models.py (SQLAlchemy), repository.py
-│   └── utils/                       file_utils.py, validation.py
-├── common/                          config.py + audio_features.py — SHARED by training & backend
-├── training/                        prepare_dataset.py, dataset.py, train_cnn.py, train_autoencoder.py
-├── evaluation/                      evaluate.py, results/ (confusion matrix, ROC, JSON reports)
-├── models/                          checkpoints, feature_stats.json, registry.json (source of truth)
-├── data/raw, data/processed/        dataset + manifest (gitignored; see below to reproduce)
-├── tests/                           37 pytest tests (unit + real-model integration)
-├── requirements.txt, Dockerfile, .env.example
+│
+├── backend/
+│   └── app/
+│       ├── api/
+│       │   └── routes/
+│       ├── core/
+│       ├── db/
+│       ├── ml/
+│       │   └── models/
+│       ├── schemas/
+│       ├── services/
+│       └── utils/
+│
+├── frontend/
+│   └── src/
+│       ├── api/
+│       ├── components/
+│       ├── hooks/
+│       ├── pages/
+│       ├── styles/
+│       └── utils/
+│
+├── common/
+│   ├── audio_features.py
+│   └── config.py
+│
+├── training/
+│   ├── dataset.py
+│   ├── prepare_dataset.py
+│   ├── train_cnn.py
+│   └── train_autoencoder.py
+│
+├── evaluation/
+│   ├── evaluate.py
+│   └── results/
+│
+├── models/
+│   ├── aerosense_cnn_v1.pt
+│   ├── aerosense_autoencoder_v1.pt
+│   ├── feature_stats.json
+│   └── registry.json
+│
+├── data/
+│   └── processed/
+│
+├── tests/
+│
+├── Dockerfile
+├── requirements.txt
+├── .env.example
+└── README.md
 ```
 
-## Setup & installation
+---
+
+# Quick Start
+
+## Backend
+
+### 1. Create a virtual environment
+
+### Windows
+
+```powershell
+python -m venv .venv
+.venv\Scripts\activate
+```
+
+### Linux / macOS
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate            # or venv\Scripts\activate on Windows
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+### 2. Install dependencies
+
+```bash
 pip install -r requirements.txt
+```
+
+### 3. Configure environment
+
+Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Linux/macOS:
+
+```bash
 cp .env.example .env
 ```
 
-## Reproducing training from scratch
+### 4. Start the API
+
+From the project root:
+
+```powershell
+$env:PYTHONPATH=".;backend"
+uvicorn backend.app.main:app --reload --port 8000
+```
+
+Or:
+
+```powershell
+cd backend
+$env:PYTHONPATH=".;.."
+uvicorn app.main:app --reload --port 8000
+```
+
+Backend:
+
+```text
+http://localhost:8000
+```
+
+---
+
+## Frontend
+
+Open a second terminal:
 
 ```bash
-# 1. Download the real dataset (≈574MB)
-git clone https://github.com/tiiuae/UAV-Propeller-Anomaly-Audio-Dataset.git /tmp/uav_dataset
-mkdir -p data/raw
-cp -r /tmp/uav_dataset/Dataset/* data/raw/
+cd frontend
+npm install
+npm run dev
+```
 
-# 2. Build the segment manifest + feature stats
+Frontend:
+
+```text
+http://localhost:5173
+```
+
+---
+
+# Reproducing Training
+
+The repository contains the complete training pipeline.
+
+## 1. Obtain the dataset
+
+```bash
+git clone https://github.com/tiiuae/UAV-Propeller-Anomaly-Audio-Dataset.git
+```
+
+Place the dataset under:
+
+```text
+data/raw/
+```
+
+## 2. Prepare the dataset
+
+```bash
 python -m training.prepare_dataset
+```
 
-# 3. Train the CNN classifier (resumable — re-run to continue if it stops early)
-python -m training.train_cnn --epochs 12 --batch-size 32 --patience 3 --resume --time-budget-seconds 1200
+## 3. Train the CNN
 
-# 4. Train the autoencoder (normal-only)
-python -m training.train_autoencoder --epochs 15 --batch-size 32 --patience 4 --resume --time-budget-seconds 1200
+```bash
+python -m training.train_cnn \
+  --epochs 12 \
+  --batch-size 32 \
+  --patience 3 \
+  --resume \
+  --time-budget-seconds 1200
+```
 
-# 5. Evaluate on the real held-out test set + fit the anomaly threshold + write models/registry.json
+The training process supports resumable checkpoints.
+
+## 4. Train the autoencoder
+
+```bash
+python -m training.train_autoencoder \
+  --epochs 15 \
+  --batch-size 32 \
+  --patience 4 \
+  --resume \
+  --time-budget-seconds 1200
+```
+
+## 5. Evaluate
+
+```bash
 python -m evaluation.evaluate
 ```
 
-## Running the API
+Results are written to:
 
-```bash
-cd backend
-export PYTHONPATH=.:..
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```text
+evaluation/results/
 ```
 
-Swagger UI: http://localhost:8000/docs · ReDoc: http://localhost:8000/redoc
+---
 
-### curl examples
+# Testing
 
-```bash
-# Health
-curl http://localhost:8000/api/v1/health
-curl http://localhost:8000/api/v1/health/model
-
-# Analyze a clip
-curl -X POST http://localhost:8000/api/v1/audio/analyze \
-  -F "file=@sample.wav" \
-  -F "device_id=drone-01" \
-  -F "environment=indoor"
-
-# List predictions
-curl "http://localhost:8000/api/v1/predictions?limit=20&status=ANOMALY"
-
-# Analytics
-curl http://localhost:8000/api/v1/analytics/summary
-curl http://localhost:8000/api/v1/analytics/fault-distribution
-```
-
-## API reference
-
-| Method | Path | Description |
-|---|---|---|
-| GET | `/api/v1/health` | Liveness check |
-| GET | `/api/v1/health/model` | Whether real checkpoints are loaded |
-| POST | `/api/v1/audio/upload` | Validate + probe metadata only, no inference |
-| POST | `/api/v1/audio/analyze` | Full pipeline: preprocess → classify → anomaly score → decide → explain → persist |
-| GET | `/api/v1/predictions` | List, filter by `status`/`device_id`, paginated |
-| GET | `/api/v1/predictions/{id}` | Fetch one |
-| DELETE | `/api/v1/predictions/{id}` | Delete one |
-| GET | `/api/v1/models` | Real training metadata for both models |
-| GET | `/api/v1/models/active` | Active model versions + current threshold |
-| GET | `/api/v1/analytics/summary` | Aggregate stats |
-| GET | `/api/v1/analytics/fault-distribution` | Count per fault type |
-| GET | `/api/v1/analytics/anomaly-trend` | Recent anomaly scores over time |
-
-Errors are structured JSON: `{"error": {"code": "...", "message": "..."}}`
-with correct HTTP status (422 invalid audio, 415 unsupported format, 413 too
-large, 503 model unavailable, 404 not found, 500 unexpected). Stack traces
-are never returned to the client; they're logged server-side.
-
-## Testing
+Run:
 
 ```bash
 python -m pytest tests/ -v
 ```
 
-**37 tests, all passing.** This includes real-model integration tests
-(`tests/test_inference_pipeline.py`) that run the *actual* trained
-checkpoints against real held-out audio from the test split — not mocked —
-plus unit tests for preprocessing, model shapes, the decision engine, and
-API-mechanics tests (validation, errors, model-unavailable simulation) that
-don't need real inference to verify.
+Current test suite:
 
-## Docker
+**38 tests — all passing.**
+
+Coverage includes:
+
+* Audio validation
+* Preprocessing
+* Model architecture
+* Model loading
+* Decision engine
+* Real inference pipeline
+* Model-unavailable behavior
+* Health endpoints
+* Grad-CAM API behavior
+* Backend integration
+
+The inference integration tests use the actual trained checkpoints rather
+than mocked model outputs.
+
+---
+
+# Docker
+
+Build:
 
 ```bash
 docker build -t aerosense-backend .
+```
+
+Run:
+
+```bash
 docker run -p 8000:8000 aerosense-backend
 ```
 
-The image includes the trained checkpoints (<2MB total) but **not** the raw
-dataset (`data/raw/`, ~574MB) — that's excluded via `.dockerignore` since
-it's only needed for retraining, not serving.
+The Docker image includes the trained model checkpoints required for
+inference.
 
-## Limitations
+The raw training dataset is excluded because it is only required for
+retraining.
 
-Stated plainly, as required:
+---
 
-1. **Fault taxonomy is dataset-limited.** Real classes are propeller-damage
-   severity (`normal/1_broken/2_broken/3_4_broken`) from one real dataset,
-   not a general bearing/motor/aircraft-engine fault taxonomy — no dataset
-   for those was reachable from this environment (network sandbox allows
-   github.com/pypi/npm but not Kaggle/Zenodo/IEEE Dataport, where such
-   datasets are typically hosted).
-2. **Only CNN + autoencoder were trained to convergence.** CRNN/Transformer
-   were not trained — training even the compact CNN took ~15 min of actual
-   CPU compute across multiple resumable runs; training two more
-   architectures to a fair comparison wasn't feasible in this session's
-   compute budget (1 CPU core, no GPU).
-3. **Indoor-flight-only data.** All 293 recordings are indoor missions;
-   generalization to outdoor environments, different drone models, or
-   fixed-wing aircraft is untested.
-4. **No noise-robustness ablation was run** (clean vs. low/medium/high
-   synthetic noise injection) — augmentation used during training includes
-   Gaussian noise, but a systematic degradation study (as requested in the
-   original spec) was not completed in this session.
-5. **No experiment tracker (MLflow) integration** — lightweight structured
-   JSON logs (`models/*_training_log.json`) were used instead, as permitted
-   ("MLflow if appropriate, otherwise lightweight structured logging").
+# Model Registry
 
-## Future work
+The deployed model metadata is maintained in:
 
-- Train CRNN and Transformer architectures (already reusable via
-  `common/audio_features.py` + `training/dataset.py`) given GPU access, and
-  add them to `evaluation/evaluate.py`'s comparison table.
-- Systematic noise-robustness evaluation: inject controlled SNR levels and
-  measure precision/recall/F1 degradation.
-- Source and integrate a bearing/motor-fault dataset (e.g. CWRU bearing
-  dataset, MIMII) to extend the real fault taxonomy beyond propeller damage.
-- Outdoor and multi-drone-model recordings to test generalization.
-- Embedding-space distance (via `AeroSenseCNN.embed()`, already implemented)
-  as a second unknown-anomaly signal alongside reconstruction error.
+```text
+models/registry.json
+```
+
+The registry records information such as:
+
+* Model name
+* Version
+* Architecture
+* Training metadata
+* Feature configuration
+* Active status
+* Anomaly threshold
+
+This prevents the frontend/backend from presenting untrained architectures
+as active production models.
+
+---
+
+# Limitations
+
+AeroSense is a working research/engineering prototype. Its limitations are
+explicit.
+
+### 1. Dataset-limited fault taxonomy
+
+The real dataset contains:
+
+```text
+normal
+1_broken
+2_broken
+3_4_broken
+```
+
+These represent propeller-damage severity.
+
+The system is not currently a general-purpose detector for bearing,
+motor, or aircraft-engine faults.
+
+### 2. CNN + Autoencoder only
+
+CRNN and Transformer architectures were not trained to convergence in the
+available CPU-only environment.
+
+They are therefore **not reported as trained models**.
+
+### 3. Indoor-flight data
+
+The dataset consists of indoor UAV recordings.
+
+Generalization to:
+
+* Outdoor environments
+* Different UAV platforms
+* Different microphones
+* Different acoustic environments
+
+has not yet been established.
+
+### 4. Noise robustness
+
+Training includes noise augmentation, but a dedicated controlled SNR
+robustness study has not yet been completed.
+
+### 5. No experiment tracker
+
+MLflow is not currently integrated.
+
+Training metadata is stored using structured JSON logs and checkpoints.
+
+### 6. Upload-based inference
+
+The current application processes uploaded audio recordings.
+
+Continuous microphone streaming is not currently implemented.
+
+---
+
+# Future Work
+
+* Train and benchmark CRNN architecture
+* Train and benchmark Transformer architecture
+* Controlled SNR/noise robustness experiments
+* Expand the dataset with motor and bearing fault recordings
+* Outdoor UAV testing
+* Multi-UAV domain evaluation
+* Microphone/domain adaptation
+* Embedding-space unknown-anomaly detection
+* Continuous microphone inference
+* Background inference workers
+* Experiment tracking
+* Production deployment
+* Edge-device optimization
+
+---
+
+# Technical Stack
+
+### Machine Learning
+
+* Python
+* PyTorch
+* NumPy
+* SciPy
+* Librosa
+* scikit-learn
+
+### Backend
+
+* FastAPI
+* Pydantic
+* SQLAlchemy
+* SQLite
+* Uvicorn
+
+### Frontend
+
+* React
+* TypeScript
+* Vite
+* Recharts
+* Web Audio API
+
+### Engineering
+
+* Pytest
+* Docker
+* Git
+* GitHub
+* REST APIs
+* OpenAPI / Swagger
+
+---
+
+# Project Status
+
+| Component                       | Status        |
+| ------------------------------- | ------------- |
+| Real UAV acoustic dataset       | ✅             |
+| Leakage-safe preprocessing      | ✅             |
+| CNN classifier                  | ✅ Trained     |
+| CNN evaluation                  | ✅             |
+| Autoencoder                     | ✅ Trained     |
+| Anomaly threshold fitting       | ✅             |
+| Unknown anomaly decision engine | ✅             |
+| Grad-CAM explainability         | ✅             |
+| FastAPI backend                 | ✅             |
+| Database persistence            | ✅             |
+| Analytics API                   | ✅             |
+| React frontend                  | ✅             |
+| Real API integration            | ✅             |
+| Automated tests                 | ✅ 38 passing  |
+| Docker support                  | ✅             |
+| CRNN                            | ⏳ Future work |
+| Transformer                     | ⏳ Future work |
+| Continuous audio streaming      | ⏳ Future work |
+
+---
+
+# License & Dataset Attribution
+
+AeroSense uses the:
+
+**TII UAV Propeller Anomaly Audio Dataset**
+
+Technology Innovation Institute, ICASSP 2022.
+
+Dataset repository:
+
+[https://github.com/tiiuae/UAV-Propeller-Anomaly-Audio-Dataset](https://github.com/tiiuae/UAV-Propeller-Anomaly-Audio-Dataset)
+
+Refer to the upstream repository for dataset licensing and attribution
+requirements.
+
+---
+
+<div align="center">
+
+### AeroSense
+
+**Acoustic intelligence for UAV health monitoring.**
+
+From raw audio → deep learning → anomaly detection → explainable diagnosis.
+
+</div>

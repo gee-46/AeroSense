@@ -26,6 +26,18 @@ def test_analyze_real_severe_fault_clip_detects_anomaly(client, real_fault_wav):
     assert body["anomaly_score"] > body["anomaly_threshold"]
     assert body["explanation"] is not None
     assert body["explanation"]["method"] == "grad_cam"
+    assert body["explanation"]["heatmap_path"].startswith("/static/outputs/")
+
+
+def test_gradcam_heatmap_is_actually_servable(client, real_fault_wav):
+    """Regression test: heatmap_path must be a servable URL, not a raw
+    filesystem path — otherwise a browser frontend can't load it."""
+    with open(real_fault_wav, "rb") as f:
+        r = client.post("/api/v1/audio/analyze", files={"file": ("fault.wav", f, "audio/wav")})
+    heatmap_path = r.json()["explanation"]["heatmap_path"]
+    img_response = client.get(heatmap_path)
+    assert img_response.status_code == 200
+    assert img_response.headers["content-type"] == "image/png"
 
 
 def test_prediction_persisted_and_retrievable(client, real_fault_wav):

@@ -75,6 +75,9 @@ def summarize_attention(heatmap: np.ndarray, cfg=AUDIO_CONFIG, energy_threshold:
 
 
 def save_overlay(mel: np.ndarray, heatmap: np.ndarray, prediction_id: str) -> str:
+    """Saves the overlay PNG and returns a URL PATH (not a filesystem path)
+    servable by the API's static mount — see app/main.py's `/static/outputs`
+    StaticFiles mount. The frontend can load this directly as an <img src>."""
     os.makedirs(settings.OUTPUT_DIR, exist_ok=True)
     fname = f"gradcam_{prediction_id}.png"
     path = os.path.join(settings.OUTPUT_DIR, fname)
@@ -88,7 +91,7 @@ def save_overlay(mel: np.ndarray, heatmap: np.ndarray, prediction_id: str) -> st
     fig.tight_layout()
     fig.savefig(path, dpi=110)
     plt.close(fig)
-    return path
+    return f"/static/outputs/{fname}"
 
 
 def explain(registry, mel_segment_standardized: np.ndarray, class_idx: int, prediction_id: str) -> dict:

@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.logging import logger
@@ -46,6 +47,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serve Grad-CAM overlay images (and any other generated output artifacts)
+# so the frontend can load them directly as <img src="{API_BASE}{heatmap_path}">.
+# Uploaded audio (settings.UPLOAD_DIR) is intentionally NOT mounted here —
+# there's no product need to serve raw uploads back, and not exposing them
+# avoids turning the upload endpoint into an arbitrary file host.
+import os as _os
+_os.makedirs(settings.OUTPUT_DIR, exist_ok=True)
+app.mount("/static/outputs", StaticFiles(directory=settings.OUTPUT_DIR), name="outputs")
 
 
 @app.exception_handler(AeroSenseError)

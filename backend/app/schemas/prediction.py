@@ -9,7 +9,7 @@ class Explanation(BaseModel):
     method: str = Field(..., description="Explainability method used, e.g. 'grad_cam'")
     important_frequency_range_hz: Optional[List[float]] = None
     important_time_range_seconds: Optional[List[float]] = None
-    heatmap_path: Optional[str] = Field(None, description="Server-relative path to the saved attribution overlay image")
+    heatmap_path: Optional[str] = Field(None, description="URL path (relative to API base URL) to the saved attribution overlay image, e.g. '/static/outputs/gradcam_<id>.png'")
     notes: Optional[str] = None
 
 

@@ -90,13 +90,15 @@ export default function AnalyticsPage() {
           </div>
           {summary.loading ? (
             <Skeleton height={140} />
+          ) : summary.error ? (
+            <ErrorState error={summary.error} onRetry={summary.refetch} />
           ) : Object.keys(statusDist).length === 0 ? (
             <EmptyState title="No detections yet" description="Status breakdown will populate as predictions come in." />
           ) : (
             <div className="breakdown-list">
               {Object.entries(statusDist).map(([key, value]) => (
                 <div key={key} className="breakdown-row">
-                  <span className="breakdown-label">{key.replace("_", " ")}</span>
+                  <span className="breakdown-label">{key.replace(/_/g, " ")}</span>
                   <div className="breakdown-track">
                     <div
                       className="breakdown-fill"

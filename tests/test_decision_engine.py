@@ -59,3 +59,23 @@ def test_borderline_normal_tiebreaker_does_not_override_genuine_anomaly():
     probs = np.array([0.92, 0.03, 0.03, 0.02])
     result = decide(probs, CLASS_NAMES, anomaly_score=0.20, threshold=0.05, min_confidence=0.5)
     assert result.status != "NORMAL"
+
+
+def test_threshold_boundary_is_inclusive_and_deterministic():
+    """score == threshold counts as a reconstruction anomaly (>=); a confident
+    'normal' only overrides it inside the documented <10% tolerance band."""
+    thr = 0.05
+    sure_normal = np.array([0.95, 0.02, 0.02, 0.01])
+    assert decide(sure_normal, CLASS_NAMES, thr * 0.999, thr).status == "NORMAL"
+    assert decide(sure_normal, CLASS_NAMES, thr, thr).status == "NORMAL"          # inside tolerance band
+    assert decide(sure_normal, CLASS_NAMES, thr * 1.0999, thr).status == "NORMAL"
+    assert decide(sure_normal, CLASS_NAMES, thr * 1.1, thr).status == "UNKNOWN_ANOMALY"
+    unsure = np.array([0.6, 0.2, 0.1, 0.1])                                        # normal but < 0.9
+    assert decide(unsure, CLASS_NAMES, thr, thr).status == "UNKNOWN_ANOMALY"
+    assert decide(unsure, CLASS_NAMES, thr * 0.999, thr).status == "NORMAL"
+
+
+def test_confidence_boundary_for_known_fault():
+    probs = np.array([0.1, 0.5, 0.2, 0.2])
+    assert decide(probs, CLASS_NAMES, 0.0, 0.05, min_confidence=0.5).status == "ANOMALY"
+    assert decide(probs, CLASS_NAMES, 0.0, 0.05, min_confidence=0.5001).status == "NORMAL"

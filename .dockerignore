@@ -24,3 +24,8 @@ backend/outputs/
 .env
 .venv/
 venv/
+frontend/
+**/node_modules/
+.env.*
+*.log
+README.md

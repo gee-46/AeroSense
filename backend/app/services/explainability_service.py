@@ -8,7 +8,7 @@ attended to. This is derived directly from the trained model's gradients —
 it is not a templated or invented explanation.
 """
 import os
-import uuid
+import re
 
 import numpy as np
 import torch
@@ -19,6 +19,8 @@ import matplotlib.pyplot as plt
 from app.core.config import settings
 from common.config import AUDIO_CONFIG
 
+_SAFE_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
 
 class GradCAM:
     def __init__(self, model: torch.nn.Module):
@@ -26,8 +28,18 @@ class GradCAM:
         self.activations = None
         self.gradients = None
         target_layer = model.features[-1].conv  # last conv layer before GAP
-        target_layer.register_forward_hook(self._save_activation)
-        target_layer.register_full_backward_hook(self._save_gradient)
+        # Keep the handles: the model is a process-wide singleton, so hooks that
+        # are never removed accumulate with every request (and fire on every
+        # later forward pass).
+        self._handles = [
+            target_layer.register_forward_hook(self._save_activation),
+            target_layer.register_full_backward_hook(self._save_gradient),
+        ]
+
+    def close(self):
+        for h in self._handles:
+            h.remove()
+        self._handles = []
 
     def _save_activation(self, module, inp, out):
         self.activations = out.detach()
@@ -38,9 +50,10 @@ class GradCAM:
     def generate(self, x: torch.Tensor, class_idx: int) -> np.ndarray:
         """x: (1, 1, n_mels, n_frames). Returns a (n_mels, n_frames) heatmap in [0, 1]."""
         self.model.zero_grad()
-        logits = self.model(x)
-        score = logits[0, class_idx]
-        score.backward()
+        with torch.enable_grad():
+            logits = self.model(x)
+            score = logits[0, class_idx]
+            score.backward()
 
         weights = self.gradients.mean(dim=[2, 3], keepdim=True)  # (1, C, 1, 1)
         cam = torch.relu((weights * self.activations).sum(dim=1, keepdim=True))  # (1,1,h,w)
@@ -79,6 +92,10 @@ def save_overlay(mel: np.ndarray, heatmap: np.ndarray, prediction_id: str) -> st
     servable by the API's static mount — see app/main.py's `/static/outputs`
     StaticFiles mount. The frontend can load this directly as an <img src>."""
     os.makedirs(settings.OUTPUT_DIR, exist_ok=True)
+    # prediction_id is a server-generated UUID; reject anything else so a future
+    # caller can never turn it into a path-traversal vector.
+    if not _SAFE_ID.fullmatch(prediction_id):
+        raise ValueError("unsafe prediction id")
     fname = f"gradcam_{prediction_id}.png"
     path = os.path.join(settings.OUTPUT_DIR, fname)
 
@@ -101,13 +118,18 @@ def explain(registry, mel_segment_standardized: np.ndarray, class_idx: int, pred
     Returns explanation metadata + writes an overlay PNG to OUTPUT_DIR.
     """
     model = registry.require_classifier()
-    model.zero_grad()
-    cam = GradCAM(model)
     x = torch.from_numpy(mel_segment_standardized[np.newaxis, :, :, :].astype(np.float32)).to(registry.device)
-    x.requires_grad_(False)
-    heatmap = cam.generate(x, class_idx)
-    ranges = summarize_attention(heatmap)
-    overlay_path = save_overlay(mel_segment_standardized[0], heatmap, prediction_id)
+    # The lock keeps hook registration, the backward pass and matplotlib
+    # (pyplot is not thread-safe) from interleaving with other requests.
+    with registry.inference_lock:
+        cam = GradCAM(model)
+        try:
+            heatmap = cam.generate(x, class_idx)
+        finally:
+            cam.close()
+            model.zero_grad(set_to_none=True)
+        ranges = summarize_attention(heatmap)
+        overlay_path = save_overlay(mel_segment_standardized[0], heatmap, prediction_id)
     return {
         "method": "grad_cam",
         "heatmap_path": overlay_path,
@@ -117,3 +139,27 @@ def explain(registry, mel_segment_standardized: np.ndarray, class_idx: int, pred
                  "segment in the clip. Frequency/time ranges are the region where normalized "
                  "attribution >= 0.6 (or the top 20% region if no pixel reaches that).",
     }
+
+
+def delete_overlay(heatmap_url_path) -> bool:
+    """Remove a generated overlay given the URL path stored with a prediction.
+
+    Only files named gradcam_<id>.png directly inside OUTPUT_DIR are removed;
+    anything else (including crafted paths) is ignored.
+    """
+    if not heatmap_url_path:
+        return False
+    fname = os.path.basename(str(heatmap_url_path))
+    if not (fname.startswith("gradcam_") and fname.endswith(".png")):
+        return False
+    base = os.path.realpath(settings.OUTPUT_DIR)
+    target = os.path.realpath(os.path.join(base, fname))
+    if os.path.dirname(target) != base:
+        return False
+    try:
+        os.remove(target)
+        return True
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return False

@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
+import { MAX_UPLOAD_MB } from "../../api/client";
 
-const ACCEPTED_EXTENSIONS = [".wav", ".mp3", ".flac", ".m4a"];
+const ACCEPTED_EXTENSIONS = [".wav", ".mp3", ".flac"];
 
 export default function UploadPanel({
   file,
@@ -10,6 +11,7 @@ export default function UploadPanel({
   onFileSelected: (file: File) => void;
 }) {
   const [isDragging, setIsDragging] = useState(false);
+  const [rejection, setRejection] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFiles = useCallback(
@@ -17,7 +19,19 @@ export default function UploadPanel({
       if (!files || files.length === 0) return;
       const f = files[0];
       const ext = "." + f.name.split(".").pop()?.toLowerCase();
-      if (!ACCEPTED_EXTENSIONS.includes(ext)) return;
+      if (!ACCEPTED_EXTENSIONS.includes(ext)) {
+        setRejection(`"${f.name}" is not a supported type. Use ${ACCEPTED_EXTENSIONS.join(", ")}.`);
+        return;
+      }
+      if (f.size === 0) {
+        setRejection(`"${f.name}" is empty.`);
+        return;
+      }
+      if (f.size > MAX_UPLOAD_MB * 1024 * 1024) {
+        setRejection(`"${f.name}" is ${(f.size / 1048576).toFixed(1)} MB; the limit is ${MAX_UPLOAD_MB} MB.`);
+        return;
+      }
+      setRejection(null);
       onFileSelected(f);
     },
     [onFileSelected]
@@ -39,8 +53,12 @@ export default function UploadPanel({
       onClick={() => inputRef.current?.click()}
       role="button"
       tabIndex={0}
+      aria-label="Upload an audio recording"
       onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          inputRef.current?.click();
+        }
       }}
     >
       <input
@@ -48,7 +66,12 @@ export default function UploadPanel({
         type="file"
         accept={ACCEPTED_EXTENSIONS.join(",")}
         className="visually-hidden"
-        onChange={(e) => handleFiles(e.target.files)}
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => {
+          handleFiles(e.target.files);
+          e.target.value = ""; // allow re-selecting the same file after Clear
+        }}
       />
       <svg width="30" height="30" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path
@@ -60,7 +83,12 @@ export default function UploadPanel({
         />
       </svg>
       <p className="upload-title">{file ? file.name : "Drop a recording here, or click to browse"}</p>
-      <p className="eyebrow">WAV · MP3 · FLAC · M4A</p>
+      <p className="eyebrow">WAV · MP3 · FLAC · up to {MAX_UPLOAD_MB} MB</p>
+      {rejection && (
+        <p role="alert" style={{ color: "var(--color-critical)", fontSize: 12.5 }}>
+          {rejection}
+        </p>
+      )}
 
       <style>{`
         .upload-panel {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import Card from "../components/ui/Card";
@@ -23,10 +23,19 @@ export default function HistoryPage() {
   const [status, setStatus] = useState<PredictionStatus | "">("");
   const [deviceFilter, setDeviceFilter] = useState("");
   const [offset, setOffset] = useState(0);
+  // Debounce so typing a device ID doesn't fire one request per keystroke.
+  const [debouncedDevice, setDebouncedDevice] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedDevice(deviceFilter.trim());
+      setOffset(0);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [deviceFilter]);
 
   const { data, loading, error, refetch } = useApi(
-    () => listPredictions({ limit: PAGE_SIZE, offset, status: status || undefined, device_id: deviceFilter || undefined }),
-    [status, deviceFilter, offset]
+    () => listPredictions({ limit: PAGE_SIZE, offset, status: status || undefined, device_id: debouncedDevice || undefined }),
+    [status, debouncedDevice, offset]
   );
 
   return (
@@ -41,6 +50,7 @@ export default function HistoryPage() {
           {STATUS_FILTERS.map((f) => (
             <button
               key={f.value}
+              aria-pressed={status === f.value}
               className={`filter-pill${status === f.value ? " filter-pill-active" : ""}`}
               onClick={() => {
                 setStatus(f.value);
@@ -55,10 +65,11 @@ export default function HistoryPage() {
           className="device-filter"
           type="text"
           placeholder="Filter by device ID…"
+          aria-label="Filter by device ID"
+          maxLength={128}
           value={deviceFilter}
           onChange={(e) => {
             setDeviceFilter(e.target.value);
-            setOffset(0);
           }}
         />
       </div>
@@ -74,16 +85,22 @@ export default function HistoryPage() {
           <div style={{ padding: 24 }}>
             <ErrorState error={error} onRetry={refetch} />
           </div>
+        ) : data && data.items.length === 0 && offset > 0 && data.total > 0 ? (
+          <EmptyState
+            title="This page is empty"
+            description="Records on this page were removed."
+            action={<button className="btn-ghost" onClick={() => setOffset(0)}>Back to first page</button>}
+          />
         ) : !data || data.items.length === 0 ? (
           <EmptyState
             title="No matching predictions"
             description={
-              status || deviceFilter
+              status || debouncedDevice
                 ? "No predictions match the current filters."
                 : "Run an analysis to start building the detection log."
             }
             action={
-              !status && !deviceFilter ? (
+              !status && !debouncedDevice ? (
                 <Link to="/analyze" className="btn-primary">
                   Analyze a recording
                 </Link>

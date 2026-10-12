@@ -1,4 +1,5 @@
 import type { AnalyzeParams } from "../../api/types";
+import { MAX_RPM, validateRpm } from "../../utils/validation";
 
 export default function ContextFieldsForm({
   value,
@@ -15,6 +16,7 @@ export default function ContextFieldsForm({
           <span className="field-label">Device ID</span>
           <input
             type="text"
+            maxLength={128}
             placeholder="e.g. drone-04"
             value={value.device_id ?? ""}
             onChange={(e) => onChange({ ...value, device_id: e.target.value || undefined })}
@@ -24,6 +26,7 @@ export default function ContextFieldsForm({
           <span className="field-label">Environment</span>
           <input
             type="text"
+            maxLength={128}
             placeholder="indoor / outdoor"
             value={value.environment ?? ""}
             onChange={(e) => onChange({ ...value, environment: e.target.value || undefined })}
@@ -33,6 +36,7 @@ export default function ContextFieldsForm({
           <span className="field-label">Operating condition</span>
           <input
             type="text"
+            maxLength={128}
             placeholder="hover / cruise / ascent"
             value={value.operating_condition ?? ""}
             onChange={(e) => onChange({ ...value, operating_condition: e.target.value || undefined })}
@@ -42,10 +46,19 @@ export default function ContextFieldsForm({
           <span className="field-label">RPM</span>
           <input
             type="number"
+            min={0}
+            max={MAX_RPM}
+            step="any"
+            aria-invalid={validateRpm(value.rpm) !== null}
             placeholder="e.g. 4200"
             value={value.rpm ?? ""}
             onChange={(e) => onChange({ ...value, rpm: e.target.value ? Number(e.target.value) : undefined })}
           />
+          {validateRpm(value.rpm) && (
+            <span role="alert" style={{ color: "var(--color-critical)", fontSize: 12 }}>
+              {validateRpm(value.rpm)}
+            </span>
+          )}
         </label>
       </div>
 

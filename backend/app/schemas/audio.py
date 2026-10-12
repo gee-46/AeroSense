@@ -7,7 +7,6 @@ class AudioAnalyzeParams(BaseModel):
     environment: Optional[str] = Field(None, description="Recording environment, e.g. 'indoor', 'outdoor'")
     operating_condition: Optional[str] = Field(None, description="Operating condition, e.g. 'hover', 'cruise'")
     rpm: Optional[float] = Field(None, description="Rotor/engine RPM at time of recording, if known")
-    model_version: Optional[str] = Field(None, description="Force a specific model version instead of the active one")
 
 
 class AudioMetadata(BaseModel):

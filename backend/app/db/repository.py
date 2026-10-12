@@ -4,6 +4,7 @@ from sqlalchemy import func
 
 from app.db.models import Prediction
 from app.core.exceptions import DatabaseError, NotFoundError
+from app.core.logging import logger
 
 
 def create_prediction(db: Session, **fields) -> Prediction:
@@ -15,7 +16,9 @@ def create_prediction(db: Session, **fields) -> Prediction:
         return pred
     except Exception as e:
         db.rollback()
-        raise DatabaseError(f"Failed to persist prediction: {e}")
+        # Do not echo driver/SQL text to clients; it is logged by the caller.
+        logger.exception("Failed to persist prediction")
+        raise DatabaseError("Failed to persist prediction")
 
 
 def get_prediction(db: Session, prediction_id: str) -> Prediction:
@@ -39,14 +42,19 @@ def list_predictions(
     return total, items
 
 
-def delete_prediction(db: Session, prediction_id: str) -> None:
+def delete_prediction(db: Session, prediction_id: str) -> Optional[str]:
+    """Delete a record. Returns its Grad-CAM URL path (if any) so the caller can
+    remove the generated image too, instead of orphaning it on disk."""
     pred = get_prediction(db, prediction_id)
+    explanation_path = pred.explanation_path
     try:
         db.delete(pred)
         db.commit()
     except Exception as e:
         db.rollback()
-        raise DatabaseError(f"Failed to delete prediction: {e}")
+        logger.exception("Failed to delete prediction")
+        raise DatabaseError("Failed to delete prediction")
+    return explanation_path
 
 
 def fault_distribution(db: Session) -> dict:

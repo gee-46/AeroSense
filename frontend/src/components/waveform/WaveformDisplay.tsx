@@ -11,11 +11,12 @@ export default function WaveformDisplay({ file }: { file: File }) {
     setError(null);
 
     async function render() {
+      let ctx: AudioContext | null = null;
       try {
         const arrayBuffer = await file.arrayBuffer();
         const AudioCtx =
           window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-        const ctx = new AudioCtx();
+        ctx = new AudioCtx();
         const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
         if (cancelled) return;
 
@@ -53,10 +54,12 @@ export default function WaveformDisplay({ file }: { file: File }) {
           c2d.fillRect(x, Math.min(y1, y2), 1, Math.max(1, Math.abs(y2 - y1)));
         }
 
-        ctx.close();
         if (!cancelled) setReady(true);
       } catch {
-        if (!cancelled) setError("Could not decode audio for waveform preview (file is still valid for analysis).");
+        if (!cancelled) setError("Could not decode audio for waveform preview (the server can still analyze it).");
+      } finally {
+        // Browsers cap the number of live AudioContexts; always release ours.
+        void ctx?.close().catch(() => undefined);
       }
     }
 
@@ -68,7 +71,7 @@ export default function WaveformDisplay({ file }: { file: File }) {
 
   return (
     <div className="waveform-display">
-      <canvas ref={canvasRef} className="waveform-canvas" />
+      <canvas ref={canvasRef} className="waveform-canvas" role="img" aria-label="Waveform preview of the selected recording" />
       {!ready && !error && <div className="waveform-loading eyebrow">decoding waveform…</div>}
       {error && <div className="waveform-error eyebrow">{error}</div>}
       <style>{`

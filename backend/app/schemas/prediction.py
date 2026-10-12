@@ -1,14 +1,17 @@
-from typing import Optional, List
+from typing import Optional, List, Literal
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 
 from app.schemas.audio import AudioMetadata
 
 
+PredictionStatus = Literal["NORMAL", "ANOMALY", "UNKNOWN_ANOMALY", "ERROR"]
+
+
 class Explanation(BaseModel):
     method: str = Field(..., description="Explainability method used, e.g. 'grad_cam'")
-    important_frequency_range_hz: Optional[List[float]] = None
-    important_time_range_seconds: Optional[List[float]] = None
+    important_frequency_range_hz: Optional[List[float]] = Field(None, min_length=2, max_length=2)
+    important_time_range_seconds: Optional[List[float]] = Field(None, min_length=2, max_length=2)
     heatmap_path: Optional[str] = Field(None, description="URL path (relative to API base URL) to the saved attribution overlay image, e.g. '/static/outputs/gradcam_<id>.png'")
     notes: Optional[str] = None
 

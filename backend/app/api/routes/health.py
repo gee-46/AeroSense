@@ -19,18 +19,21 @@ def model_health():
     """
     Reports whether the classifier and autoencoder checkpoints are actually
     loaded in memory, and whether they are real trained weights
-    (is_trained=True) as opposed to an uninitialized architecture.
+    (declared trained in registry.json) as opposed to merely loaded.
     """
     registry = get_model_registry()
     return ModelHealthResponse(
         classifier_loaded=registry.classifier_loaded,
         classifier_version=registry.classifier_meta.get("version"),
-        classifier_is_trained=registry.classifier_loaded,
+        classifier_is_trained=registry.classifier_is_trained(),
         autoencoder_loaded=registry.autoencoder_loaded,
         autoencoder_version=registry.autoencoder_meta.get("version"),
-        autoencoder_is_trained=registry.autoencoder_loaded,
+        autoencoder_is_trained=registry.autoencoder_is_trained(),
         device=str(registry.device),
         anomaly_threshold=registry.anomaly_threshold,
+        anomaly_threshold_source=registry.anomaly_threshold_source,
+        feature_stats_loaded=registry.feature_stats_loaded,
+        consistency_warnings=registry.consistency_warnings,
         details={
             "classifier_meta": registry.classifier_meta,
             "autoencoder_meta": registry.autoencoder_meta,

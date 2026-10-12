@@ -5,7 +5,7 @@ Input:  (batch, 1, n_mels, n_frames)  e.g. (B, 1, 64, 126) for the default confi
 Output: (batch, num_classes) logits
 
 Architecture: 4 conv blocks (conv -> BN -> ReLU -> maxpool) + global average
-pool + a small classifier head. Deliberately compact (~250K params) because
+pool + a small classifier head. Deliberately compact (~106K params, see models/registry.json) because
 we are training on ~13k segments on a single CPU core, not a GPU cluster —
 a large architecture would overfit and be impractically slow to train here.
 """

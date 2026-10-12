@@ -36,3 +36,22 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Frontend
+node_modules/
+frontend/dist/
+dist/
+*.tsbuildinfo
+frontend/.env
+frontend/.env.local
+.env.*
+!.env.example
+!frontend/.env.example
+
+# Generated artifacts / local data
+backend/uploads/
+backend/outputs/
+data/raw/
+*.egg-info/
+.coverage
+htmlcov/

@@ -47,9 +47,9 @@ export function listPredictions(opts: {
   return apiGet<PredictionListResponse>("/api/v1/predictions", opts);
 }
 
-export const getPrediction = (id: string) => apiGet<PredictionResult>(`/api/v1/predictions/${id}`);
+export const getPrediction = (id: string) => apiGet<PredictionResult>(`/api/v1/predictions/${encodeURIComponent(id)}`);
 
-export const deletePrediction = (id: string) => apiDelete(`/api/v1/predictions/${id}`);
+export const deletePrediction = (id: string) => apiDelete(`/api/v1/predictions/${encodeURIComponent(id)}`);
 
 export const listModels = () => apiGet<ModelsListResponse>("/api/v1/models");
 

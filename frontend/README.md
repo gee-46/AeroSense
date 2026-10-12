@@ -17,7 +17,7 @@ API response. There is no mock data anywhere in this app.
 ## Setup
 
 ```bash
-npm install
+npm ci
 cp .env.example .env   # set VITE_API_BASE_URL if the backend isn't on localhost:8000
 npm run dev
 ```
@@ -73,3 +73,15 @@ backend) and resolved against `VITE_API_BASE_URL` in `resolveApiUrl()`.
   available in the sandbox that built this) — verified via `tsc --noEmit`,
   `vite build`, and full end-to-end `curl` traces against the live backend
   matching exactly what the frontend's `api/endpoints.ts` sends.
+
+## Verification
+
+```bash
+npx tsc -b        # type-check
+npm run lint      # oxlint over src/ (node_modules and dist are ignored)
+npm run build     # type-check + production build
+```
+
+There are no automated UI tests; pages were checked against the live backend API.
+Accepted uploads: WAV, MP3, FLAC up to 25 MB (the server is the authority and also
+caps duration). Build output is a single ~800 kB JS chunk (Vite warns above 500 kB).

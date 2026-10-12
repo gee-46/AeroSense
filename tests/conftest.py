@@ -98,3 +98,31 @@ def real_fault_wav():
     if path is None:
         pytest.skip("real dataset not available in this environment")
     return path
+
+
+@pytest.fixture()
+def noise_wav_path(tmp_path):
+    """Seeded white noise, 4 s. Used ONLY to drive the real models through the
+    full pipeline (inference -> Grad-CAM -> persistence). No accuracy is
+    claimed for it; the autoencoder was trained on propeller audio only, so
+    broadband noise is reliably non-NORMAL, which exercises the explanation path."""
+    rng = np.random.default_rng(1234)
+    audio = (0.5 * rng.standard_normal(16000 * 4)).astype(np.float32)
+    path = tmp_path / "noise.wav"
+    sf.write(str(path), audio, 16000)
+    return str(path)
+
+
+@pytest.fixture()
+def upload_dir():
+    from app.core.config import settings
+    return settings.UPLOAD_DIR
+
+
+def post_audio(client, path, name="clip.wav", data=None):
+    with open(path, "rb") as f:
+        return client.post("/api/v1/audio/analyze", files={"file": (name, f, "audio/wav")}, data=data or {})
+
+
+def list_dir(path):
+    return sorted(os.listdir(path)) if os.path.isdir(path) else []

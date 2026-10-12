@@ -55,7 +55,7 @@ The system combines two complementary trained PyTorch models:
 | CNN Parameters | **106,148** |
 | Autoencoder Parameters | **51,041** |
 | Held-out Test Segments | **3,114** |
-| Automated Tests | **38 passing** |
+| Automated Tests | **75 passing, 6 skipped** (skips need the raw dataset; see Testing) |
 
 ---
 
@@ -944,31 +944,57 @@ evaluation/results/
 
 # Testing
 
-Run:
-
 ```bash
-python -m pytest tests/ -v
+python -m pytest tests/ -v -rs
 ```
 
-Current test suite:
+Last verified run (Python 3.14.7, pinned `requirements.txt`): **75 passed, 6 skipped, 0 failed.**
 
-**38 tests — all passing.**
+The 6 skipped tests (`tests/test_inference_pipeline.py`) need real recordings from
+`data/raw/` (not shipped; see *Reproducing Training*). They are **not** counted as
+passing. Their coverage is replaced, not claimed, by `tests/test_api_integration.py`,
+which pushes small *synthetic* audio through the **real checkpoints** and verifies
+mechanics only: finite, normalized outputs, label order, threshold taken from
+`registry.json`, persistence, Grad-CAM serving, cleanup, error envelopes. Synthetic
+audio says nothing about accuracy; accuracy comes only from `evaluation/evaluate.py`
+on the held-out split.
 
-Coverage includes:
+Coverage: audio validation, preprocessing, model architectures, checkpoint loading
+safety (`test_model_loader.py`), decision-engine boundaries, health/model endpoints,
+upload cleanup, Grad-CAM generation + HTTP retrieval + deletion, listing/filtering/
+pagination, analytics aggregation, database persistence across app restart and
+schema migration, OpenAPI contract.
 
-* Audio validation
-* Preprocessing
-* Model architecture
-* Model loading
-* Decision engine
-* Real inference pipeline
-* Model-unavailable behavior
-* Health endpoints
-* Grad-CAM API behavior
-* Backend integration
+Frontend:
 
-The inference integration tests use the actual trained checkpoints rather
-than mocked model outputs.
+```bash
+cd frontend && npm ci && npx tsc -b && npm run lint && npm run build
+```
+
+The frontend has no automated UI tests; its API usage is checked against the backend
+through the OpenAPI test above and by manual end-to-end runs.
+
+---
+
+# Clip-level aggregation
+
+An upload is cut into 2 s segments (1 s hop). Each segment is scored by both models, then:
+
+* class probabilities = **mean** of per-segment softmax vectors; the predicted class is its argmax;
+* anomaly score = **mean** of per-segment reconstruction errors, compared with the threshold (`>=`).
+
+Limitations: the threshold was fitted on *per-segment* validation errors, so applying it
+to a clip mean is an approximation, and a short abnormal burst inside a long recording is
+diluted by averaging. A confident `normal` prediction overrides a score within 10% above
+the threshold (documented in `anomaly_service.py`). Clips shorter than 1 s are rejected;
+clips longer than `MAX_AUDIO_DURATION_SECONDS` (default 600) are rejected.
+
+# Data retention
+
+Uploaded audio is **deleted after every request** (success or failure) and never served
+back. Stored per prediction: derived results, audio metadata and the Grad-CAM overlay PNG
+(`backend/outputs`, removed when the prediction is deleted). Supported formats: WAV, MP3,
+FLAC (M4A/AAC is not decodable by the backend and is not accepted).
 
 ---
 
@@ -990,7 +1016,13 @@ The Docker image includes the trained model checkpoints required for
 inference.
 
 The raw training dataset is excluded because it is only required for
-retraining.
+retraining. The container runs as an unprivileged user, stores SQLite in the `/data`
+volume (`docker run -v aerosense-data:/data ...`), restricts CORS to
+`CORS_ORIGINS` and has a `HEALTHCHECK` on `/api/v1/health`.
+
+**Status:** the Dockerfile has **not been built or run** in the environment where this
+was last verified (Docker was not installed). Treat it as unverified until you run
+`docker build` and `curl localhost:8000/api/v1/health`. No hosted deployment exists.
 
 ---
 

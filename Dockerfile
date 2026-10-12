@@ -18,15 +18,24 @@ COPY backend/ ./backend/
 # The full dataset in data/raw is intentionally NOT copied — see .dockerignore.
 COPY models/ ./models/
 
-RUN mkdir -p /app/backend/uploads /app/backend/outputs
+# Run as an unprivileged user; /data holds the SQLite database (mount a volume there).
+RUN useradd --system --create-home --uid 10001 aerosense \
+    && mkdir -p /app/backend/uploads /app/backend/outputs /data \
+    && chown -R aerosense /app/backend/uploads /app/backend/outputs /data
 
 ENV PYTHONPATH=/app:/app/backend
 ENV MODEL_DIR=/app/models
 ENV UPLOAD_DIR=/app/backend/uploads
 ENV OUTPUT_DIR=/app/backend/outputs
-ENV DATABASE_URL=sqlite:////app/aerosense.db
+ENV DATABASE_URL=sqlite:////data/aerosense.db
+ENV CORS_ORIGINS=http://localhost:5173
 
 EXPOSE 8000
+VOLUME ["/data"]
+USER aerosense
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=4).status == 200 else 1)"
 
 WORKDIR /app/backend
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

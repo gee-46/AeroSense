@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Card from "../components/ui/Card";
 import UploadPanel from "../components/analyze/UploadPanel";
@@ -11,6 +11,7 @@ import { analyzeAudio, uploadAudio } from "../api/endpoints";
 import type { AnalyzeParams, AudioMetadata, PredictionResult } from "../api/types";
 import { ApiError } from "../api/client";
 import { formatDuration } from "../utils/format";
+import { validateRpm } from "../utils/validation";
 
 type Stage = "idle" | "probing" | "ready" | "analyzing" | "done" | "error";
 
@@ -22,36 +23,50 @@ export default function AnalyzePage() {
   const [result, setResult] = useState<PredictionResult | null>(null);
   const [error, setError] = useState<Error | null>(null);
 
+  // Monotonic token so a slow probe/analysis for an old file can never
+  // overwrite state belonging to a newer selection (or a cleared form).
+  const runId = useRef(0);
+
   async function handleFileSelected(f: File) {
+    const id = ++runId.current;
     setFile(f);
+    setMetadata(null);
     setResult(null);
     setError(null);
     setStage("probing");
     try {
       const meta = await uploadAudio(f);
+      if (id !== runId.current) return;
       setMetadata(meta);
       setStage("ready");
     } catch (err) {
+      if (id !== runId.current) return;
       setError(err as Error);
       setStage("error");
     }
   }
 
   async function handleAnalyze() {
-    if (!file) return;
+    if (!file || validateRpm(params.rpm)) return;
+    // Retrying after a failed metadata probe re-probes instead of analyzing blind.
+    if (!metadata) return handleFileSelected(file);
+    const id = ++runId.current;
     setStage("analyzing");
     setError(null);
     try {
       const prediction = await analyzeAudio(file, params);
+      if (id !== runId.current) return;
       setResult(prediction);
       setStage("done");
     } catch (err) {
+      if (id !== runId.current) return;
       setError(err as Error);
       setStage("error");
     }
   }
 
   function reset() {
+    runId.current++;
     setFile(null);
     setMetadata(null);
     setResult(null);
@@ -78,7 +93,7 @@ export default function AnalyzePage() {
 
             {file && (
               <>
-                <WaveformDisplay file={file} />
+                <WaveformDisplay key={`${file.name}-${file.size}-${file.lastModified}`} file={file} />
 
                 <div className="meta-row">
                   {stage === "probing" && <span className="eyebrow">reading file metadata…</span>}
@@ -98,7 +113,7 @@ export default function AnalyzePage() {
                   <button
                     className="btn-primary analyze-btn"
                     onClick={handleAnalyze}
-                    disabled={stage === "analyzing" || stage === "probing" || !metadata}
+                    disabled={stage === "analyzing" || stage === "probing" || !metadata || validateRpm(params.rpm) !== null}
                   >
                     {stage === "analyzing" ? "Analyzing…" : "Analyze signal"}
                   </button>
@@ -114,7 +129,7 @@ export default function AnalyzePage() {
         <Card className="result-card">
           <AnimatePresence mode="wait">
             {stage === "analyzing" && (
-              <motion.div key="scanning" exit={{ opacity: 0 }}>
+              <motion.div key="scanning" exit={{ opacity: 0 }} role="status" aria-live="polite">
                 <ScanningVisualization />
               </motion.div>
             )}

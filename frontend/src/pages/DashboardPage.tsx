@@ -64,7 +64,8 @@ export default function DashboardPage() {
 
       <motion.section custom={1} initial="hidden" animate="show" variants={fadeUp}>
         <Card>
-          <div className="status-row">
+          {modelHealth.error && <ErrorState error={modelHealth.error} onRetry={modelHealth.refetch} />}
+          <div className="status-row" hidden={!!modelHealth.error}>
             <div className="status-item">
               <span className="eyebrow">Classifier</span>
               {modelHealth.loading ? (
@@ -74,7 +75,7 @@ export default function DashboardPage() {
                   <span
                     className="dot"
                     style={{
-                      background: modelHealth.data?.classifier_is_trained
+                      background: modelHealth.data?.classifier_loaded
                         ? "var(--color-success)"
                         : "var(--color-critical)",
                     }}
@@ -92,7 +93,7 @@ export default function DashboardPage() {
                   <span
                     className="dot"
                     style={{
-                      background: modelHealth.data?.autoencoder_is_trained
+                      background: modelHealth.data?.autoencoder_loaded
                         ? "var(--color-success)"
                         : "var(--color-critical)",
                     }}

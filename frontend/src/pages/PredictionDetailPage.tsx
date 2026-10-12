@@ -7,6 +7,7 @@ import { StatusPill, SeverityPill } from "../components/ui/StatusPill";
 import GradCamViewer from "../components/gradcam/GradCamViewer";
 import { useApi } from "../hooks/useApi";
 import { deletePrediction, getPrediction } from "../api/endpoints";
+import { ApiError } from "../api/client";
 import {
   formatClassLabel,
   formatDuration,
@@ -21,17 +22,24 @@ export default function PredictionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const { data: p, loading, error, refetch } = useApi(() => getPrediction(id!), [id]);
 
   async function handleDelete() {
     if (!id) return;
     if (!window.confirm("Delete this prediction record? This cannot be undone.")) return;
     setDeleting(true);
+    setDeleteError(null);
     try {
       await deletePrediction(id);
       navigate("/history");
-    } catch {
+    } catch (err) {
       setDeleting(false);
+      if (err instanceof ApiError && err.status === 404) {
+        navigate("/history"); // already gone; nothing left to delete
+        return;
+      }
+      setDeleteError(err instanceof Error ? err.message : "Could not delete this record.");
     }
   }
 
@@ -48,7 +56,14 @@ export default function PredictionDetailPage() {
   if (error || !p) {
     return (
       <div className="detail-page">
-        <ErrorState error={error ?? new Error("Prediction not found")} onRetry={refetch} />
+        <Link to="/history" className="eyebrow back-link">
+          ← back to history
+        </Link>
+        {error instanceof ApiError && error.status === 404 ? (
+          <ErrorState error={new ApiError(404, "NOT_FOUND", "This prediction does not exist or was deleted.")} />
+        ) : (
+          <ErrorState error={error ?? new Error("Prediction not found")} onRetry={refetch} />
+        )}
       </div>
     );
   }
@@ -141,6 +156,11 @@ export default function PredictionDetailPage() {
         <button className="btn-ghost delete-btn" onClick={handleDelete} disabled={deleting}>
           {deleting ? "Deleting…" : "Delete record"}
         </button>
+        {deleteError && (
+          <p role="alert" style={{ color: "var(--color-critical)", fontSize: 13, marginTop: 8 }}>
+            Delete failed: {deleteError}
+          </p>
+        )}
       </div>
 
       <style>{`

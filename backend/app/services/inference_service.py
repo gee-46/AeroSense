@@ -1,10 +1,9 @@
 import time
-import uuid
 
 import numpy as np
 
 from app.core.config import settings
-from app.core.exceptions import InferenceError, AeroSenseError
+from app.core.exceptions import InferenceError, InvalidAudioError, AeroSenseError
 from app.ml.model_loader import get_model_registry
 from app.ml.inference import classify, autoencoder_scores
 from app.services.preprocessing_service import load_and_segment, segments_to_model_batch
@@ -21,7 +20,7 @@ def run_full_analysis(audio_path: str, prediction_id: str, with_explanation: boo
     timing. Every number in the return value comes from a real forward
     pass through a trained checkpoint — nothing here is fabricated.
     """
-    t0 = time.time()
+    t0 = time.perf_counter()
     registry = get_model_registry()
 
     segments = load_and_segment(audio_path)
@@ -68,7 +67,7 @@ def run_full_analysis(audio_path: str, prediction_id: str, with_explanation: boo
             logger.warning(f"Explainability generation failed (non-fatal): {e}")
             explanation = None
 
-    processing_time_ms = (time.time() - t0) * 1000
+    processing_time_ms = (time.perf_counter() - t0) * 1000
 
     return {
         "status": decision.status,

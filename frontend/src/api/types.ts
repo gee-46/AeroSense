@@ -75,13 +75,18 @@ export interface ModelHealthResponse {
   autoencoder_is_trained: boolean;
   device: string;
   anomaly_threshold: number | null;
+  anomaly_threshold_source: string;
+  feature_stats_loaded: boolean;
+  consistency_warnings: string[];
   details: unknown;
 }
 
 export interface ModelInfo {
   name: string;
   type: "classifier" | "anomaly_detector";
-  loaded: boolean;
+  configured: boolean; // checkpoint file exists at the configured path
+  loaded: boolean; // weights loaded into memory
+  trained: boolean; // loaded AND declared trained in registry.json
   meta: Record<string, unknown>;
 }
 
@@ -93,7 +98,8 @@ export interface ModelsListResponse {
 export interface ActiveModelsResponse {
   classifier: string | null;
   autoencoder: string | null;
-  anomaly_threshold: number | null;
+  anomaly_threshold: number;
+  anomaly_threshold_source: string;
 }
 
 export interface AnalyticsSummary {

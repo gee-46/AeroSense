@@ -33,8 +33,14 @@ class Settings:
     UPLOAD_DIR: str = os.environ.get("UPLOAD_DIR", os.path.join(os.path.dirname(__file__), "..", "..", "uploads"))
     OUTPUT_DIR: str = os.environ.get("OUTPUT_DIR", os.path.join(os.path.dirname(__file__), "..", "..", "outputs"))
 
-    MAX_UPLOAD_SIZE_MB: int = int(os.environ.get("MAX_UPLOAD_SIZE_MB", 25))
-    ALLOWED_EXTENSIONS = {".wav", ".mp3", ".flac", ".m4a"}
+    MAX_UPLOAD_SIZE_MB: float = float(os.environ.get("MAX_UPLOAD_SIZE_MB", 25))
+    # Hard cap on decoded duration. A 25MB FLAC can decode to hours of audio;
+    # without this cap a small upload could exhaust CPU/RAM during segmentation.
+    MAX_AUDIO_DURATION_SECONDS: float = float(os.environ.get("MAX_AUDIO_DURATION_SECONDS", 600))
+    # .m4a/AAC is intentionally NOT listed: the decoder in use (libsndfile via
+    # soundfile) cannot read AAC, so accepting it would only ever yield
+    # CORRUPT_AUDIO errors.
+    ALLOWED_EXTENSIONS = {".wav", ".mp3", ".flac"}
 
     # Anomaly threshold: overridden by models/registry.json if present
     # (computed from real validation data by evaluation/evaluate.py).
@@ -44,7 +50,10 @@ class Settings:
     # confident "known fault" call — feeds the UNKNOWN_ANOMALY decision path.
     MIN_CLASSIFIER_CONFIDENCE: float = float(os.environ.get("MIN_CLASSIFIER_CONFIDENCE", 0.5))
 
-    CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*").split(",")
+    # Comma-separated list. Whitespace and empty entries are ignored.
+    CORS_ORIGINS: list[str] = [
+        o.strip() for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o.strip()
+    ] or ["*"]
 
     AUDIO = AUDIO_CONFIG
     CLASS_NAMES = CLASS_NAMES
